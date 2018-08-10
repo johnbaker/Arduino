@@ -509,8 +509,25 @@ bool EspClass::flashEraseSector(uint32_t sector) {
 }
 
 bool EspClass::flashWrite(uint32_t offset, uint32_t *data, size_t size) {
+    static uint32_t flash_chip_id = 0;
+    if (flash_chip_id == 0)
+        flash_chip_id = getFlashChipId();
     ets_isr_mask(FLASH_INT_MASK);
-    int rc = spi_flash_write(offset, (uint32_t*) data, size);
+    int rc;
+    uint32_t* ptr = data;
+    if ((flash_chip_id & 0x000000ff) == 0x85) { // 0x146085 PUYA
+        static uint32_t read_buf[SPI_FLASH_SEC_SIZE / 4];
+        rc = spi_flash_read(offset, read_buf, size);
+        if (rc != 0) {
+            ets_isr_unmask(FLASH_INT_MASK);
+            return false;
+        }
+        for (size_t i = 0; i < size / 4; ++i) {
+            read_buf[i] &= data[i];
+        }
+        ptr = read_buf;
+    }
+    rc = spi_flash_write(offset, ptr, size);
     ets_isr_unmask(FLASH_INT_MASK);
     return rc == 0;
 }
